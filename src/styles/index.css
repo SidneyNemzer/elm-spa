@@ -1,0 +1,15 @@
+body {
+  background-color: #eaeaea;
+}
+.post {
+  background-color: #fafafa;
+  margin: 20px auto;
+  width: 500px;
+  padding: 10px;
+  border-radius: 2px;
+}
+.post .title {
+  text-align: center;
+  font-family: sans-serif;
+  font-size: 20px;
+}
