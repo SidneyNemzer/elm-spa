@@ -11,24 +11,32 @@ import List.Extra as List
 -- MODEL --
 
 
-{-| Represents a single page. A page has many of the same capabilities as an
-`Html.programWithFlags`
+type alias SimplePage =
+    { title : String
+    , view : Html Never
+    }
 
-The Page will be triggered when the browser navigates to `url`. The browser's title will be
-automatically set to `title`. The Page will be initalized using the `init` function,
-which is passed the arguments from the `url` (if present). `update`, `subscriptions`
-and `view` work as they do in an `Html.programWithFlags`.
 
--}
-type alias Page flags model msg =
-    { parser : Parser (flags -> flags) flags
-    , title : String
-    , model : model
+type alias DynamicPage flags model msg =
+    { title : String
     , init : Maybe flags -> ( model, Cmd msg )
     , update : msg -> model -> ( model, Cmd msg )
     , subscriptions : model -> Sub msg
     , view : model -> Html msg
+    , model : Maybe model
     }
+
+
+
+-- type alias Page flags model msg =
+--     { parser : Parser
+--     , title : String
+--     , model : model
+--     , init : Maybe flags -> ( model, Cmd msg )
+--     , update : msg -> model -> ( model, Cmd msg )
+--     , subscriptions : model -> Sub msg
+--     , view : model -> Html msg
+--    }
 
 
 type HistoryType
@@ -40,34 +48,9 @@ type HistoryType
 
 
 type alias Config flags subModel subMsg =
-    { routes : Dict String (Page flags subModel subMsg)
+    { pages : Dict String (DynamicPage flags subModel subMsg)
     , historyType : HistoryType
     , currentPage : String
-    , notFound : Page flags subModel subMsg
-    , home : Page flags subModel subMsg
-    }
-
-
-
--- usingPushState : Dict String (Page a flags subModel subMsg) -> Config a flags subModel subMsg
--- usingPushState routes =
---     { routes = routes
---     , historyType = PushState
---     , currentPage = ""
---     }
-
-
-usingHashUrls :
-    Page flags subModel subMsg
-    -> Page flags subModel subMsg
-    -> Dict String (Page flags subModel subMsg)
-    -> Config flags subModel subMsg
-usingHashUrls home notFound routes =
-    { routes = routes
-    , historyType = Hash
-    , currentPage = ""
-    , home = home
-    , notFound = notFound
     }
 
 
@@ -75,13 +58,12 @@ usingHashUrls home notFound routes =
 -- UPDATE --
 
 
-type Msg subMsg
-    = SubMsg String subMsg
-    | ChangeLocation Location
+type PageUpdate subMsg
+    = PageUpdate String subMsg
 
 
-update : Msg subMsg -> Config flags subModel subMsg -> ( Config flags subModel subMsg, Cmd (Msg subMsg) )
-update msg config =
+updatePage : PageUpdate subMsg -> Config flags subModel subMsg -> ( Config flags subModel subMsg, Cmd (PageUpdate subMsg) )
+updatePage msg config =
     case msg of
         ChangeLocation newLocation ->
             let
