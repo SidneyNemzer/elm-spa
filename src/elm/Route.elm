@@ -20,11 +20,11 @@ which is passed the arguments from the `url` (if present). `update`, `subscripti
 and `view` work as they do in an `Html.programWithFlags`.
 
 -}
-type alias Page a flags model msg =
-    { parser : Parser (a -> a) a
+type alias Page flags model msg =
+    { parser : Parser (flags -> flags) flags
     , title : String
     , model : model
-    , init : flags -> ( model, Cmd msg )
+    , init : Maybe flags -> ( model, Cmd msg )
     , update : msg -> model -> ( model, Cmd msg )
     , subscriptions : model -> Sub msg
     , view : model -> Html msg
@@ -39,12 +39,12 @@ type HistoryType
 -- | PushState
 
 
-type alias Config a flags subModel subMsg =
-    { routes : Dict String (Page a flags subModel subMsg)
+type alias Config flags subModel subMsg =
+    { routes : Dict String (Page flags subModel subMsg)
     , historyType : HistoryType
     , currentPage : String
-    , notFound : Page a flags subModel subMsg
-    , home : Page a flags subModel subMsg
+    , notFound : Page flags subModel subMsg
+    , home : Page flags subModel subMsg
     }
 
 
@@ -58,32 +58,16 @@ type alias Config a flags subModel subMsg =
 
 
 usingHashUrls :
-    Page a flags subModel subMsg
-    -> Page a flags subModel subMsg
-    -> Dict String (Page a flags subModel subMsg)
-    -> Config a flags subModel subMsg
+    Page flags subModel subMsg
+    -> Page flags subModel subMsg
+    -> Dict String (Page flags subModel subMsg)
+    -> Config flags subModel subMsg
 usingHashUrls home notFound routes =
     { routes = routes
     , historyType = Hash
     , currentPage = ""
     , home = home
     , notFound = notFound
-    }
-
-
-type DefaultNotFoundModel
-    = DefaultNotFoundModel {}
-
-
-defaultNotFound : Page a flags DefaultNotFoundModel msg
-defaultNotFound =
-    { parser = s "404"
-    , title = "Not Found"
-    , model = DefaultNotFoundModel {}
-    , init = (\_ -> DefaultNotFoundModel {} ! [])
-    , update = (\_ _ -> DefaultNotFoundModel {} ! [])
-    , subscriptions = (\_ -> Sub.none)
-    , view = (\_ -> div [] [ text "Not found" ])
     }
 
 
@@ -96,16 +80,16 @@ type Msg subMsg
     | ChangeLocation Location
 
 
-update : Msg subMsg -> Config a flags subModel subMsg -> ( Config a flags subModel subMsg, Cmd (Msg subMsg) )
+update : Msg subMsg -> Config flags subModel subMsg -> ( Config flags subModel subMsg, Cmd (Msg subMsg) )
 update msg config =
     case msg of
         ChangeLocation newLocation ->
             let
-                ( route, page, data ) =
+                ( route, page, flags ) =
                     pageFromLocation config newLocation
 
                 ( newModel, newCmd ) =
-                    page.init data
+                    page.init flags
 
                 updatedPage =
                     { page
@@ -153,7 +137,7 @@ maybeToBool maybe =
             False
 
 
-pageFromLocation : Config a flags subModel subMsg -> Location -> ( String, Page a flags subModel subMsg, Maybe flags )
+pageFromLocation : Config flags subModel subMsg -> Location -> ( String, Page flags subModel subMsg, Maybe flags )
 pageFromLocation config location =
     let
         runParser =
@@ -162,7 +146,7 @@ pageFromLocation config location =
                     UrlParser.parseHash
 
         notFound =
-            config.notFound
+            ( location.hash, config.notFound, Nothing )
     in
         if String.isEmpty location.hash then
             ( "", config.home, Nothing )
@@ -176,9 +160,10 @@ pageFromLocation config location =
                 |> (\result ->
                         case result of
                             Just ( route, page ) ->
-                                runParser page.parser location
-                                    |> Maybe.withDefault
-                                        notFound
+                                ( route
+                                , page
+                                , runParser page.parser location
+                                )
 
                             Nothing ->
                                 notFound
@@ -189,7 +174,7 @@ pageFromLocation config location =
 -- SUBSCRIPTIONS --
 
 
-subscriptions : Config a flags subModel subMsg -> Sub (Msg subMsg)
+subscriptions : Config flags subModel subMsg -> Sub (Msg subMsg)
 subscriptions config =
     Dict.toList config.routes
         |> List.map
