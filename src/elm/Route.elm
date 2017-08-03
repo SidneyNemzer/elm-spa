@@ -27,16 +27,9 @@ type alias DynamicPage flags model msg =
     }
 
 
-
--- type alias Page flags model msg =
---     { parser : Parser
---     , title : String
---     , model : model
---     , init : Maybe flags -> ( model, Cmd msg )
---     , update : msg -> model -> ( model, Cmd msg )
---     , subscriptions : model -> Sub msg
---     , view : model -> Html msg
---    }
+type Page flags model msg
+    = Simple SimplePage
+    | Dynamic (DynamicPage flags model msg)
 
 
 type HistoryType
@@ -65,48 +58,85 @@ type PageUpdate subMsg
 updatePage : PageUpdate subMsg -> Config flags subModel subMsg -> ( Config flags subModel subMsg, Cmd (PageUpdate subMsg) )
 updatePage msg config =
     case msg of
-        ChangeLocation newLocation ->
+        -- ChangeLocation newLocation ->
+        --     let
+        --         ( route, page, flags ) =
+        --             pageFromLocation config newLocation
+        --
+        --         ( newModel, newCmd ) =
+        --             page.init flags
+        --
+        --         updatedPage =
+        --             { page
+        --                 | model = newModel
+        --             }
+        --     in
+        --         ( { config
+        --             | currentPage =
+        --                 route
+        --             , routes =
+        --                 Dict.insert
+        --                     route
+        --                     updatedPage
+        --                     config.routes
+        --           }
+        --         , Cmd.map (SubMsg route) newCmd
+        --         )
+        PageUpdate route subMsg ->
             let
-                ( route, page, flags ) =
-                    pageFromLocation config newLocation
+                maybePage =
+                    Dict.get route config.pages
 
-                ( newModel, newCmd ) =
-                    page.init flags
+                maybeModel =
+                    Maybe.andThen .model maybePage
 
-                updatedPage =
-                    { page
-                        | model = newModel
-                    }
-            in
-                ( { config
-                    | currentPage =
-                        route
-                    , routes =
-                        Dict.insert
-                            route
-                            updatedPage
-                            config.routes
-                  }
-                , Cmd.map (SubMsg route) newCmd
-                )
-
-        SubMsg route subMsg ->
-            case Dict.get route config.routes of
-                Just page ->
+                pageUpdate page model =
                     let
                         ( newModel, newCmd ) =
-                            page.update subMsg page.model
+                            page.update subMsg model
                     in
-                        ( { config
-                            | routes =
-                                Dict.insert route { page | model = newModel } config.routes
-                          }
-                        , Cmd.map (SubMsg route) newCmd
-                        )
+                        ( newModel, Cmd.map (PageUpdate route) newCmd )
 
-                Nothing ->
-                    Debug.log "Got a messege for a missing route" route
-                        |> (\_ -> config ! [])
+                configUpdate :
+                    DynamicPage flags subModel subMsg
+                    -> ( subModel, Cmd (PageUpdate subMsg) )
+                    -> ( Config flags subModel subMsg, Cmd (PageUpdate subMsg) )
+                configUpdate page ( newModel, newCmd ) =
+                    ( { config
+                        | pages =
+                            Dict.insert route { page | model = Just newModel } config.pages
+                      }
+                    , newCmd
+                    )
+            in
+                Maybe.map2
+                    pageUpdate
+                    maybePage
+                    maybeModel
+                    |> Maybe.map2
+                        configUpdate
+                        maybePage
+                    |> Maybe.withDefault
+                        (config ! [])
+
+
+
+-- case Dict.get route config.pages of
+--     Just page ->
+--         let
+--             ( newModel, newCmd ) =
+--                 page.update subMsg page.model
+--         in
+--             ( { config
+--                 | pages =
+--                     Dict.insert route { page | model = newModel } config.routes
+--               }
+--             , Cmd.map (PageUpdate route) newCmd
+--             )
+--
+--     Nothing ->
+--         Debug.log "Got a messege for a missing route" route
+--             |> (\_ -> config ! [])
 
 
 maybeToBool : Maybe a -> Bool
@@ -119,52 +149,61 @@ maybeToBool maybe =
             False
 
 
-pageFromLocation : Config flags subModel subMsg -> Location -> ( String, Page flags subModel subMsg, Maybe flags )
-pageFromLocation config location =
-    let
-        runParser =
-            case config.historyType of
-                Hash ->
-                    UrlParser.parseHash
 
-        notFound =
-            ( location.hash, config.notFound, Nothing )
-    in
-        if String.isEmpty location.hash then
-            ( "", config.home, Nothing )
-        else
-            Dict.toList config.routes
-                |> List.find
-                    (\( route, page ) ->
-                        runParser page.parser location
-                            |> maybeToBool
-                    )
-                |> (\result ->
-                        case result of
-                            Just ( route, page ) ->
-                                ( route
-                                , page
-                                , runParser page.parser location
-                                )
-
-                            Nothing ->
-                                notFound
-                   )
-
-
-
+-- pageFromLocation : Config flags subModel subMsg -> Location -> ( String, Page flags subModel subMsg, Maybe flags )
+-- pageFromLocation config location =
+--     let
+--         runParser =
+--             case config.historyType of
+--                 Hash ->
+--                     UrlParser.parseHash
+--
+--         notFound =
+--             ( location.hash, config.notFound, Nothing )
+--     in
+--         if String.isEmpty location.hash then
+--             ( "", config.home, Nothing )
+--         else
+--             Dict.toList config.routes
+--                 |> List.find
+--                     (\( route, page ) ->
+--                         runParser page.parser location
+--                             |> maybeToBool
+--                     )
+--                 |> (\result ->
+--                         case result of
+--                             Just ( route, page ) ->
+--                                 ( route
+--                                 , page
+--                                 , runParser page.parser location
+--                                 )
+--
+--                             Nothing ->
+--                                 notFound
+--                    )
 -- SUBSCRIPTIONS --
 
 
-subscriptions : Config flags subModel subMsg -> Sub (Msg subMsg)
+subscriptions : Config flags subModel subMsg -> Sub (PageUpdate subMsg)
 subscriptions config =
-    Dict.toList config.routes
-        |> List.map
-            (\( route, page ) ->
-                page.subscriptions page.model
-                    |> Sub.map (SubMsg route)
-            )
-        |> Sub.batch
+    let
+        maybePage =
+            Dict.get config.currentPage config.pages
+
+        maybeModel =
+            Maybe.andThen .model maybePage
+
+        pageSubs : DynamicPage flags model msg -> model -> Sub (PageUpdate msg)
+        pageSubs page model =
+            page.subscriptions model
+                |> Sub.map (PageUpdate config.currentPage)
+    in
+        Maybe.map2
+            pageSubs
+            maybePage
+            maybeModel
+            |> Maybe.withDefault
+                Sub.none
 
 
 
