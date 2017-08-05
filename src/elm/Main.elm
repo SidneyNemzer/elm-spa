@@ -1,128 +1,95 @@
 module Main exposing (..)
 
+import Dict
 import Html exposing (Html, div, h1, p, a, text)
 import Html.Attributes as Attributes
 import Util
 import Task
-import Page.Home as Home
-import Route exposing (Route)
+import Pages
+import Route
 import Navigation exposing (Location)
 
 
-main : Program Never Model Msg
+--main : Program Never (Model flags model (Msg subMsg)) (Msg subMsg)
+
+
 main =
     Navigation.program
         SetRoute
         { init = init
         , view = view
         , update = update
-        , subscriptions = (\_ -> Sub.none)
+        , subscriptions = subscriptions
         }
 
 
-type Page
-    = Blank
-    | NotFound
-    | Errored
-    | Home Home.Model
-
-
-type PageState
-    = Loaded Page
-    | TransitioningFrom Page
-
-
-type alias Model =
-    { pageState : PageState
+type alias Model flags model subMsg =
+    { routeConfig : Route.Config flags model subMsg
     }
 
 
-init : Location -> ( Model, Cmd Msg )
+init : Location -> ( Model flags model subMsg, Cmd (Msg subMsg) )
 init location =
-    { pageState = Loaded Blank
+    { routeConfig =
+        { pages =
+            Dict.fromList
+                [ ( "not-found", Pages.NotFound )
+                ]
+        , historyType = Route.Hash
+        , currentPage = "not-found"
+        }
     }
-        ! [ Task.attempt HomeLoaded Home.init ]
+        ! []
 
 
 
 -- UPDATE --
 
 
-type Msg
+type Msg subMsg
     = Noop
     | SetRoute Location
-    | HomeLoaded (Result String Home.Model)
-    | HomeMsg Home.Msg
+    | PageUpdate (Route.PageUpdate subMsg)
 
 
-getPage : PageState -> Page
-getPage pageState =
-    case pageState of
-        Loaded page ->
-            page
 
-        TransitioningFrom page ->
-            page
+-- update : Msg -> Model flags model subMsg -> ( Model flags model subMsg, Cmd (Msg subMsg) )
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
-    let
-        updatePage toModel toMsg subUpdate subMsg subModel =
+    case msg of
+        Noop ->
+            model ! []
+
+        SetRoute location ->
+            model ! []
+
+        PageUpdate updateMsg ->
             let
-                ( newModel, newCmd ) =
-                    subUpdate subMsg subModel
+                ( newConfig, newUpdateMsg ) =
+                    Route.updatePage
+                        updateMsg
+                        model.routeConfig
             in
-                { model | pageState = Loaded (toModel newModel) } ! [ Cmd.map toMsg newCmd ]
+                { model
+                    | routeConfig = newConfig
+                }
+                    ! [ newUpdateMsg ]
 
-        page =
-            getPage model.pageState
-    in
-        case ( msg, page ) of
-            ( Noop, _ ) ->
-                model ! []
 
-            ( SetRoute location, _ ) ->
-                ( { model | pageState = TransitioningFrom (getPage model.pageState) }
-                , Util.sneakyLog "Loading home..." <| Task.attempt HomeLoaded Home.init
-                )
 
-            ( HomeLoaded (Ok subModel), _ ) ->
-                { model | pageState = Util.sneakyLog "Finished loading" (Loaded (Home subModel)) } ! []
+-- SUBSCRIPTIONS --
 
-            ( HomeLoaded (Err error), _ ) ->
-                Debug.log "Failed to load home page" error
-                    |> \_ -> model ! []
 
-            ( HomeMsg subMsg, Home subModel ) ->
-                updatePage Home HomeMsg Home.update subMsg subModel
-
-            ( HomeMsg _, _ ) ->
-                Debug.log "Got a HomeMsg on Blank, NotFound, or Errored" ""
-                    |> \_ -> model ! []
+subscriptions : Model flags model subMsg -> Sub (Route.PageUpdate (Msg subMsg))
+subscriptions model =
+    Route.subscriptions model.routeConfig
 
 
 
 -- VIEW --
 
 
-view : Model -> Html Msg
+view : Model flags model subMsg -> Html (Route.PageUpdate (Msg subMsg))
 view model =
-    let
-        page =
-            getPage model.pageState
-    in
-        case page of
-            Home subModel ->
-                Home.view subModel
-                    |> Html.map HomeMsg
-
-            Blank ->
-                div []
-                    [ h1 [] [ text "This is a blank page" ]
-                    , p [] [ text "The homepage is probably being loaded" ]
-                    , a [ Attributes.href "#test" ] [ text "This is a test" ]
-                    ]
-
-            _ ->
-                Debug.crash "Cannot render anything but homepage"
+    Route.view model.routeConfig

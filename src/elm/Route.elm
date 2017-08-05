@@ -1,11 +1,8 @@
 module Route exposing (..)
 
 import Dict exposing (Dict)
-import Task exposing (Task)
 import Html exposing (Html, div, text)
-import UrlParser exposing (Parser, s)
 import Navigation exposing (Location)
-import List.Extra as List
 
 
 -- MODEL --
@@ -41,10 +38,20 @@ type HistoryType
 
 
 type alias Config flags subModel subMsg =
-    { pages : Dict String (DynamicPage flags subModel subMsg)
+    { pages : Dict String (Page flags subModel subMsg)
     , historyType : HistoryType
     , currentPage : String
     }
+
+
+maybeDynamicPage : Page flags model msg -> Maybe (DynamicPage flags model msg)
+maybeDynamicPage page =
+    case page of
+        Dynamic dynamicPage ->
+            Just dynamicPage
+
+        Simple _ ->
+            Nothing
 
 
 
@@ -58,34 +65,11 @@ type PageUpdate subMsg
 updatePage : PageUpdate subMsg -> Config flags subModel subMsg -> ( Config flags subModel subMsg, Cmd (PageUpdate subMsg) )
 updatePage msg config =
     case msg of
-        -- ChangeLocation newLocation ->
-        --     let
-        --         ( route, page, flags ) =
-        --             pageFromLocation config newLocation
-        --
-        --         ( newModel, newCmd ) =
-        --             page.init flags
-        --
-        --         updatedPage =
-        --             { page
-        --                 | model = newModel
-        --             }
-        --     in
-        --         ( { config
-        --             | currentPage =
-        --                 route
-        --             , routes =
-        --                 Dict.insert
-        --                     route
-        --                     updatedPage
-        --                     config.routes
-        --           }
-        --         , Cmd.map (SubMsg route) newCmd
-        --         )
         PageUpdate route subMsg ->
             let
                 maybePage =
                     Dict.get route config.pages
+                        |> Maybe.andThen maybeDynamicPage
 
                 maybeModel =
                     Maybe.andThen .model maybePage
@@ -104,7 +88,7 @@ updatePage msg config =
                 configUpdate page ( newModel, newCmd ) =
                     ( { config
                         | pages =
-                            Dict.insert route { page | model = Just newModel } config.pages
+                            Dict.insert route (Dynamic { page | model = Just newModel }) config.pages
                       }
                     , newCmd
                     )
@@ -118,25 +102,6 @@ updatePage msg config =
                         maybePage
                     |> Maybe.withDefault
                         (config ! [])
-
-
-
--- case Dict.get route config.pages of
---     Just page ->
---         let
---             ( newModel, newCmd ) =
---                 page.update subMsg page.model
---         in
---             ( { config
---                 | pages =
---                     Dict.insert route { page | model = newModel } config.routes
---               }
---             , Cmd.map (PageUpdate route) newCmd
---             )
---
---     Nothing ->
---         Debug.log "Got a messege for a missing route" route
---             |> (\_ -> config ! [])
 
 
 maybeToBool : Maybe a -> Bool
@@ -189,6 +154,7 @@ subscriptions config =
     let
         maybePage =
             Dict.get config.currentPage config.pages
+                |> Maybe.andThen maybeDynamicPage
 
         maybeModel =
             Maybe.andThen .model maybePage
@@ -208,6 +174,26 @@ subscriptions config =
 
 
 -- VIEW --
---
--- view : Config a flags subModel subMsg -> Html (Msg subMsg)
--- view config =
+
+
+view : Config flags subModel subMsg -> Html (PageUpdate subMsg)
+view config =
+    let
+        maybePage =
+            Dict.get config.currentPage config.pages
+                |> Maybe.andThen maybeDynamicPage
+
+        maybeModel =
+            Maybe.andThen .model maybePage
+
+        pageView : { a | view : model -> Html subMsg } -> model -> Html (PageUpdate subMsg)
+        pageView page model =
+            page.view model
+                |> Html.map (PageUpdate config.currentPage)
+    in
+        Maybe.map2
+            pageView
+            maybePage
+            maybeModel
+            |> Maybe.withDefault
+                (Html.text ("Failed to render page \"" ++ config.currentPage ++ "\""))
