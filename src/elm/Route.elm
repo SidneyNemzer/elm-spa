@@ -8,9 +8,9 @@ import Navigation exposing (Location)
 -- MODEL --
 
 
-type alias SimplePage =
+type alias SimplePage msg =
     { title : String
-    , view : Html Never
+    , view : Html msg
     }
 
 
@@ -25,7 +25,7 @@ type alias DynamicPage flags model msg =
 
 
 type Page flags model msg
-    = Simple SimplePage
+    = Simple (SimplePage msg)
     | Dynamic (DynamicPage flags model msg)
 
 
@@ -176,24 +176,43 @@ subscriptions config =
 -- VIEW --
 
 
+viewPage : String -> Page flags model msg -> Maybe (Html (PageUpdate msg))
+viewPage currentPage page =
+    case page of
+        Simple simplePage ->
+            Just <| Html.map (PageUpdate currentPage) simplePage.view
+
+        Dynamic dynamicPage ->
+            Nothing
+
+
 view : Config flags subModel subMsg -> Html (PageUpdate subMsg)
 view config =
-    let
-        maybePage =
-            Dict.get config.currentPage config.pages
-                |> Maybe.andThen maybeDynamicPage
+    Dict.get config.currentPage config.pages
+        |> Maybe.andThen
+            (viewPage config.currentPage)
+        |> Maybe.withDefault
+            (Html.text ("Failed to render page \"" ++ config.currentPage ++ "\""))
 
-        maybeModel =
-            Maybe.andThen .model maybePage
 
-        pageView : { a | view : model -> Html subMsg } -> model -> Html (PageUpdate subMsg)
-        pageView page model =
-            page.view model
-                |> Html.map (PageUpdate config.currentPage)
-    in
-        Maybe.map2
-            pageView
-            maybePage
-            maybeModel
-            |> Maybe.withDefault
-                (Html.text ("Failed to render page \"" ++ config.currentPage ++ "\""))
+
+-- let
+--     maybePage =
+--         Dict.get config.currentPage config.pages
+--             |> Maybe.andThen maybeDynamicPage
+--
+--     maybeModel =
+--         Maybe.andThen .model maybePage
+--             |> Maybe.withDefault maybePage.
+--
+--     pageView : { a | view : model -> Html subMsg } -> model -> Html (PageUpdate subMsg)
+--     pageView page model =
+--         page.view model
+--             |> Html.map (PageUpdate config.currentPage)
+-- in
+--     Maybe.map2
+--         pageView
+--         maybePage
+--         maybeModel
+--         |> Maybe.withDefault
+--             (Html.text ("Failed to render page \"" ++ config.currentPage ++ "\""))

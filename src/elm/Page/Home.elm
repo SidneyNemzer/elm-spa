@@ -1,4 +1,4 @@
-module Page.Home exposing (Model, Msg, init, update, view)
+module Page.Home exposing (main_, Model)
 
 import Html exposing (Html, div, h2, p, text)
 import Html.Attributes exposing (class)
@@ -6,6 +6,18 @@ import Dict exposing (Dict)
 import Task exposing (Task)
 import Data.Post as Post exposing (Post)
 import Request.Post
+import Route
+
+
+main_ : Route.DynamicPage flags Model Msg
+main_ =
+    { title = "Home"
+    , init = init
+    , update = update
+    , subscriptions = \_ -> Sub.none
+    , view = view
+    , model = Nothing
+    }
 
 
 type alias Model =
@@ -13,11 +25,16 @@ type alias Model =
     }
 
 
-init : Task String Model
-init =
-    Task.map
-        Model
-        Request.Post.list
+init : Maybe flags -> ( Model, Cmd Msg )
+init _ =
+    ( Model (Dict.fromList [])
+    , Task.attempt
+        Loaded
+        (Task.map
+            Model
+            Request.Post.list
+        )
+    )
 
 
 
@@ -26,6 +43,7 @@ init =
 
 type Msg
     = Noop
+    | Loaded (Result String Model)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -33,6 +51,12 @@ update msg model =
     case msg of
         Noop ->
             model ! []
+
+        Loaded (Err err) ->
+            model ! []
+
+        Loaded (Ok result) ->
+            result ! []
 
 
 
