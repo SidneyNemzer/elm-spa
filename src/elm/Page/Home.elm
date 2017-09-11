@@ -13,11 +13,14 @@ type alias Model =
     }
 
 
-init : Task String Model
+init : ( Model, Cmd Msg )
 init =
-    Task.map
-        Model
+    ( (Model <| Dict.fromList [])
+    , (Task.attempt
+        Loaded
         Request.Post.list
+      )
+    )
 
 
 
@@ -26,6 +29,7 @@ init =
 
 type Msg
     = Noop
+    | Loaded (Result String (Dict String Post))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -33,6 +37,18 @@ update msg model =
     case msg of
         Noop ->
             model ! []
+
+        Loaded (Err error) ->
+            ( model
+            , Cmd.none
+            )
+
+        Loaded (Ok posts) ->
+            ( { model
+                | posts = posts
+              }
+            , Cmd.none
+            )
 
 
 
