@@ -5,7 +5,7 @@ import Html exposing (Html, div, h1, p, a, text)
 import Html.Attributes as Attributes
 import Util
 import Task
-import Pages exposing (PageModel)
+import Pages exposing (Models)
 import Route
 import Navigation exposing (Location)
 import Page.NotFound
@@ -30,7 +30,25 @@ type alias Model flags model subMsg =
     }
 
 
-init : Location -> ( Model flags PageModel subMsg, Cmd (Msg subMsg) )
+transformPage :
+    name
+    -> parentModel
+    -> parentMsg
+    -> Route.DynamicPage flags subModel subMsg
+    -> Route.DynamicPage flags parentModel parentMsg
+transformPage name parentModel parentMsg page =
+    Route.DynamicPage
+        { title = page.title
+        , init = page.init
+        , update =
+            (\msg model ->
+
+
+            )
+        }
+
+
+init : Location -> ( Model flags Models subMsg, Cmd (Msg subMsg) )
 init location =
     { routeConfig =
         { pages =
